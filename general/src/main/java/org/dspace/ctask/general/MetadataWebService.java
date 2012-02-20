@@ -11,16 +11,21 @@ import java.io.InputStream;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.namespace.NamespaceContext;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpression;
 import javax.xml.xpath.XPathExpressionException;
 import javax.xml.xpath.XPathFactory;
+import javax.xml.XMLConstants;
 
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
@@ -31,6 +36,7 @@ import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.log4j.Logger;
 
 import org.w3c.dom.Document;
+import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
@@ -40,6 +46,7 @@ import org.dspace.authorize.AuthorizeException;
 import org.dspace.content.DCValue;
 import org.dspace.content.DSpaceObject;
 import org.dspace.content.Item;
+import org.dspace.core.ConfigurationManager;
 import org.dspace.core.Constants;
 import org.dspace.curate.AbstractCurationTask;
 import org.dspace.curate.Curator;
@@ -63,7 +70,7 @@ import org.dspace.curate.Suspendable;
  * in the {parameter} position. If multiple values are present in the
  * item field, the first value is used.
  * 
- * The task also uses a property (the datamap) to determine what data
+ * The task uses another property (the datamap) to determine what data
  * to extract from the service response and how to use it, e.g.
  * 
  * //publisher/name=>dc.publisher,//romeocolour
@@ -99,6 +106,7 @@ import org.dspace.curate.Suspendable;
  * 'cut' <number> = remove number leading characters
  * 'trunc' <number> = remove trailing characters after number length
  * 'match' <pattern> = start match at pattern
+ * 'text' <string> = append literal characters
  * 
  * If the transform results in an invalid state (e.g. cutting more characters
  * than are in the value), the condition will be logged and the 
@@ -115,7 +123,7 @@ import org.dspace.curate.Suspendable;
  */
 @Mutative
 @Suspendable
-public class MetadataWebService extends AbstractCurationTask
+public class MetadataWebService extends AbstractCurationTask implements NamespaceContext
 {
     /** log4j category */
     private static final Logger log = Logger.getLogger(MetadataWebService.class);
@@ -131,6 +139,10 @@ public class MetadataWebService extends AbstractCurationTask
     private List<DataInfo> dataList = null;
     // response document parsing tools
     private DocumentBuilder docBuilder = null;
+    // language for metadata fields assigned
+    private String lang = null;
+    // optional XML namespace map
+    private Map<String, String> nsMap = null;
     
     /**
      * Initializes task
@@ -140,34 +152,27 @@ public class MetadataWebService extends AbstractCurationTask
     @Override
     public void init(Curator curator, String taskId) throws IOException {
     	super.init(curator, taskId);
+    	lang = ConfigurationManager.getProperty("default.language");
     	urlTemplate = taskProperty("template");
     	templateParam = urlTemplate.substring(urlTemplate.indexOf("{") + 1,
     			                              urlTemplate.indexOf("}"));
     	String[] parsed = parseTransform(templateParam);
     	lookupField = parsed[0];
     	lookupTransform = parsed[1];
-    	XPath xpath = XPathFactory.newInstance().newXPath();
     	dataList = new ArrayList<DataInfo>();
-    	try {
-    		for (String entry : taskProperty("datamap").split(",")) {
-    			String src = entry;
-    			String mapping = null;
-    			String field = null;
-    			int mapIdx = getMapIndex(entry);
-    			if (mapIdx > 0) {
-    				src = entry.substring(0, mapIdx);
-    				mapping = entry.substring(mapIdx, mapIdx + 2);
-    				field = entry.substring(mapIdx + 2);
-    			}
-    			int slIdx = src.lastIndexOf("/");
-        		String label = (slIdx > 0) ? src.substring(slIdx + 1) : src;
-    			XPathExpression expr = xpath.compile(src);
-    			dataList.add(new DataInfo(expr, label, mapping, field));
+    	for (String entry : taskProperty("datamap").split(",")) {
+    		String src = entry;
+    		String mapping = null;
+    		String field = null;
+    		int mapIdx = getMapIndex(entry);
+    		if (mapIdx > 0) {
+    			src = entry.substring(0, mapIdx);
+    			mapping = entry.substring(mapIdx, mapIdx + 2);
+    			field = entry.substring(mapIdx + 2);
     		}
-    	} catch (XPathExpressionException xpeE) {
-    		log.error("caught exception: " + xpeE);
-        	// no point in continuing
-        	throw new IOException(xpeE.getMessage(), xpeE);  			
+    		int slIdx = src.lastIndexOf("/");
+        	String label = (slIdx > 0) ? src.substring(slIdx + 1) : src;
+    		dataList.add(new DataInfo(src, label, mapping, field));
     	}
     	// initialize response document parser
     	DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
@@ -265,12 +270,15 @@ public class MetadataWebService extends AbstractCurationTask
     	return status;
     }
     
-    private int processResponse(Document doc, Item item, StringBuilder resultSb) {
+    private int processResponse(Document doc, Item item, StringBuilder resultSb) throws IOException {
        	boolean update = false;
        	int status = Curator.CURATE_ERROR;
+       	List<String> values = new ArrayList<String>();
+       	checkNamespaces(doc);
        	try {
        		for (DataInfo info : dataList) {
        			NodeList nodes = (NodeList)info.expr.evaluate(doc, XPathConstants.NODESET);
+       			values.clear();
        			// if data found and we are mapping, check assignment policy
        			if (nodes.getLength() > 0 && info.mapping != null) {
        				if ("=>".equals(info.mapping)) {
@@ -280,14 +288,18 @@ public class MetadataWebService extends AbstractCurationTask
        						// there are values, so don't overwrite
        						continue;
        					}
+       				} else {
+       					for (DCValue dcVal : item.getMetadata(info.schema, info.element, info.qualifier, Item.ANY)) {
+       						values.add(dcVal.value);
+       					}
        				}
        			}
        			for (int i = 0; i < nodes.getLength(); i++) {
        				Node node = nodes.item(i);
        				String tvalue = transform(node.getFirstChild().getNodeValue(), info.transform);
-       				// assign to metadata field if mapped
-       				if (info.mapping != null) {
-       					item.addMetadata(info.schema, info.element, info.qualifier, Item.ANY, tvalue);
+       				// assign to metadata field if mapped && not present
+       				if (info.mapping != null && ! values.contains(tvalue)) {
+       					item.addMetadata(info.schema, info.element, info.qualifier, lang, tvalue);
        					update = true;
        				}
        				// add to result string in any case
@@ -340,6 +352,8 @@ public class MetadataWebService extends AbstractCurationTask
     				log.error("requested match: " + tokens[i+1] + " failed");
     				return value;
     			}
+    		} else if ("text".equals(tokens[i])) {
+    			retValue = retValue + tokens[i+1];
     		} else {
     			log.error(" unknown transform operation: " + tokens[i]);
     			return value;
@@ -375,8 +389,96 @@ public class MetadataWebService extends AbstractCurationTask
     	return parsed;
     }
     
+    private void checkNamespaces(Document document) throws IOException {
+    	// skip if already done
+    	if (dataList.get(0).expr != null) {
+    		return;
+    	}
+    	try {
+    		XPath xpath = XPathFactory.newInstance().newXPath();
+    		String prefix = null;
+    		// see if there is a default namespace declaration
+    		if (document.getDocumentElement().hasAttribute("xmlns")) {
+    			NamedNodeMap attrs = document.getDocumentElement().getAttributes();
+    			for (int i = 0; i < attrs.getLength(); i++) {
+    				Node n = attrs.item(i);
+    				// remember if a namespace
+    				String name = n.getNodeName();
+    				if (name.startsWith("xmlns")) {
+    					if (nsMap == null) {
+    						nsMap = new HashMap<String, String>();
+    					}
+    					if (! "xmlns".equals(name)) {
+    						// it is a declared (non-default) namespace - capture prefix
+    						nsMap.put(name.substring(name.indexOf(":") + 1), n.getNodeValue());
+    					} else {
+    						// it is the default name space - mint a unique prefix
+    						prefix = "pre";
+    						nsMap.put(prefix, n.getNodeValue());
+    					}
+    				}
+    			}
+    			xpath.setNamespaceContext(this);
+    		}
+    		// now compile the XPath expressions
+    		for (DataInfo info : dataList) {
+				info.expr = xpath.compile(mangleExpr(info.xpsrc, prefix));
+			}
+    	} catch (XPathExpressionException xpeE) {
+    		log.error("caught exception: " + xpeE);
+        	// no point in continuing
+        	throw new IOException(xpeE.getMessage(), xpeE);  			
+    	}
+    }
+    
+    private String mangleExpr(String expr, String prefix) {
+    	if (prefix == null) {
+    		return expr;
+    	}
+    	// OK the drill is to prepend all node names with the prefix
+    	// *unless* the node name already has a prefix.
+    	StringBuilder sb = new StringBuilder();
+    	int i = 0;
+    	while (i < expr.length()) {
+    		if (expr.charAt(i) == '/') {
+    			sb.append("/");
+    			i++;
+    		} else {
+    			int next = expr.indexOf("/", i);
+    			String token = (next > 0) ? expr.substring(i, next) : expr.substring(i);
+    			if (! token.startsWith("@") && token.indexOf(":") < 0) {
+    				sb.append(prefix).append(":");
+    			}
+    			sb.append(token);
+    			i += token.length();
+    		}
+    	}
+    	return sb.toString();
+    }
+    
+    // ---- NamespaceContext methods ---- //
+    
+    public String getNamespaceURI(String prefix) {
+        if (prefix == null) {
+        	throw new NullPointerException("Null prefix");
+        } else if ("xml".equals(prefix)) {
+        	return XMLConstants.XML_NS_URI;
+        }
+        String nsURI = nsMap.get(prefix);
+        return (nsURI != null) ? nsURI : XMLConstants.NULL_NS_URI;
+    }
+
+    public String getPrefix(String uri) {
+        throw new UnsupportedOperationException();
+    }
+
+    public Iterator getPrefixes(String uri) {
+        throw new UnsupportedOperationException();
+    }
+    
     private class DataInfo {
     	public XPathExpression expr; // compiled XPath espression for data
+    	public String xpsrc;		// uncompiled XPath expression 
     	public String label;		// label for data in result string
     	public String mapping;		// data mapping symbol: ->,=>,~>, or null = unmapped
     	public String schema;		// item metadata field mapping target, null = unmapped
@@ -384,7 +486,8 @@ public class MetadataWebService extends AbstractCurationTask
     	public String qualifier;	// item metadata field mapping target, null = unmapped
     	public String transform;	// optional transformation of data before field assignment
     	
-    	public DataInfo(XPathExpression expr, String label, String mapping, String field) {
+    	public DataInfo(String xpsrc, String label, String mapping, String field) {
+    		this.xpsrc = xpsrc;
     		this.expr = expr;
     		this.label = label;
     		this.mapping = mapping;
