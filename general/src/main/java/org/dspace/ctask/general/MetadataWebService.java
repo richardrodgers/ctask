@@ -15,6 +15,8 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -106,7 +108,7 @@ import org.dspace.curate.Suspendable;
  * 'cut' <number> = remove number leading characters
  * 'trunc' <number> = remove trailing characters after number length
  * 'match' <pattern> = start match at pattern
- * 'text' <string> = append literal characters
+ * 'text' <characters> = append literal characters (enclose in ' ' when whitespace needed)
  * 
  * If the transform results in an invalid state (e.g. cutting more characters
  * than are in the value), the condition will be logged and the 
@@ -127,6 +129,8 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
 {
     /** log4j category */
     private static final Logger log = Logger.getLogger(MetadataWebService.class);
+    // transform token parsing pattern
+    private static Pattern ttPattern = Pattern.compile("\'([^\']*)\'|(\\S+)");
     // URL of web service with template parameters
     private String urlTemplate = null;
     // template parameter
@@ -161,6 +165,7 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
     	lookupTransform = parsed[1];
     	dataList = new ArrayList<DataInfo>();
     	for (String entry : taskProperty("datamap").split(",")) {
+    		entry = entry.trim();
     		String src = entry;
     		String mapping = null;
     		String field = null;
@@ -329,7 +334,7 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
     	if (transDef == null) {
     		return value;
     	}
-    	String[] tokens = transDef.split("\\s+");
+    	String[] tokens = tokenize(transDef);
     	String retValue = value;
     	for (int i = 0; i < tokens.length; i+= 2) {
     		if ("cut".equals(tokens[i]) || "trunc".equals(tokens[i])) {
@@ -360,6 +365,19 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
     		}
     	}
     	return retValue;
+    }
+    
+    private String[] tokenize(String text)  {
+    	List<String> list = new ArrayList<String>();
+    	Matcher m = ttPattern.matcher(text);
+    	while (m.find()) {
+    		if (m.group(1) != null) {
+    			list.add(m.group(1));
+            } else if (m.group(2) != null) {
+                list.add(m.group(2));
+            }
+        }
+        return list.toArray(new String[0]);
     }
     
     private int getMapIndex(String mapping) {

@@ -38,6 +38,7 @@ This means exclude the value string up to the occurrence of '10.', then truncate
  * 'cut' <number> = remove number leading characters
  * 'trunc' <number> = remove trailing characters after number length
  * 'match' <pattern> = start match at pattern
+ * 'text' <characters> = append literal characters (enclose in ' ' when whitespace needed)
 
 If the transform results in an invalid state (e.g. cutting more characters than are in the value), the condition will be logged and the un-transformed value used.
  

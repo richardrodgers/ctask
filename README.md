@@ -12,6 +12,8 @@ DSpace curation resources:
 
 System Documentation: <https://wiki.duraspace.org/display/DSDOC/Curation+System>  
 Task Cookbook: <https://wiki.duraspace.org/display/DSPACE/Curation+Task+Cookbook>  
-Related Work: <https://github.com/kshepherd/Curation>
+Related Work:
+* <https://github.com/kshepherd/Curation> 
+* <https://github.com/lconz-irr/Curation-Tasks>
 
 _Suggestions and contributions welcome!_
