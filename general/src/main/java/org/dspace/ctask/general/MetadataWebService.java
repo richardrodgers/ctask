@@ -345,8 +345,8 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
     				} else {
     					retValue = retValue.substring(0, index);
     				}
-    			} else {
-    				log.error("requested cut/trunc: " + index + " exceeds value length");
+    			} else if ("cut".equals(tokens[i])) {
+    				log.error("requested cut: " + index + " exceeds value length");
     				return value;
     			}
     		} else if ("match".equals(tokens[i])) {
