@@ -74,7 +74,9 @@ public abstract class MediaFilter extends AbstractCurationTask
         
         String[] srcSpecs = taskProperty("source.selector").split("/");
         sourceBundle = srcSpecs[0];
-        sourceSelector = glob2regex(srcSpecs[1]);
+        if (srcSpecs.length > 1) {
+        	sourceSelector = glob2regex(srcSpecs[1]);
+        }
         sourceMinSize = taskIntProperty("source.minsize", 0);
         String fmtList = taskProperty("source.formats");
         if (fmtList != null)  {
@@ -110,7 +112,7 @@ public abstract class MediaFilter extends AbstractCurationTask
     	Item item = (Item)dso;
         int eligible = 0, filtered = 0;
         try {
-        	Context c = Curator.curationContext();
+            Context c = Curator.curationContext();
             for (Bundle bundle : item.getBundles(sourceBundle)) {   
                 for (Bitstream bitstream : bundle.getBitstreams()) {
                 	if (isEligible(c, item, bitstream)) {
@@ -144,7 +146,7 @@ public abstract class MediaFilter extends AbstractCurationTask
     // Concrete subclasses must implement
     protected abstract boolean canFilter(Item item, Bitstream bitstream);
     protected abstract boolean filterBitstream(Item item, Bitstream bitstream) 
-    		throws AuthorizeException, IOException, SQLException;
+    		  throws AuthorizeException, IOException, SQLException;
         
     protected boolean createDerivative(Item item, Bitstream source, InputStream targetStream)
     	throws AuthorizeException, IOException, SQLException  { 
@@ -191,7 +193,7 @@ public abstract class MediaFilter extends AbstractCurationTask
     	if (bitstream.getSize() < sourceMinSize) {
     		log.debug("Bitstream: '" + bitstream.getName() + "' size: " + bitstream.getSize() + " below minimum: " + sourceMinSize);
     		return false;
-    	} else if (! sourceSelector.matcher(bitstream.getName()).matches()) {
+    	} else if ((sourceSelector != null) && ! sourceSelector.matcher(bitstream.getName()).matches()) {
     		log.debug("Bitstream: '" + bitstream.getName() + "' does not match selector: " + sourceSelector.toString());
     		return false;
     	} else if (! filterForce && existingTarget(context, item, bitstream) != null) {
