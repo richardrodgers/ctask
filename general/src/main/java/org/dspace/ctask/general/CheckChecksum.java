@@ -49,8 +49,8 @@ public class CheckChecksum extends AbstractCurationTask
                         String compCs = Utils.checksum(bs.retrieve(), bs.getChecksumAlgorithm());
                         if (! compCs.equals(bs.getChecksum())) {
                             String result = "Checksum discrepancy in item: " + item.getHandle() +
-                                      " for bitstream: '" + bs.getName() + "(seqId: " + bs.getSequenceID() + ")" +
-                                      "' ingest: " + bs.getChecksum() + " current: " + compCs;
+                                      " for bitstream: '" + bs.getName() + "' (seqId: " + bs.getSequenceID() + ")" +
+                                      " ingest: " + bs.getChecksum() + " current: " + compCs;
                             report(result);
                             setResult(result);
                             return CURATE_FAIL;
