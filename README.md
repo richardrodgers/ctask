@@ -6,7 +6,7 @@ Most of these tasks are direct responses to the expanding service needs of MIT's
 
 Look for README files in sub-projects for details. Feel free to adopt/fork, etc but use at your own risk.
 
-Unless otherwise noted, assume tasks require a DSpace 1.8 system.
+Unless otherwise noted, assume tasks require a DSpace 1.8 or better system.
 
 DSpace curation resources:
 

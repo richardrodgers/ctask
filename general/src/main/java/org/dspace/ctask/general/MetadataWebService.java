@@ -91,6 +91,8 @@ import org.dspace.curate.Suspendable;
  * 
  * Unmapped data (without a mapping symbol) will simply be added to the task
  * result string, prepended by the XPath expression (a little prettified).
+ * Each label/value pair in the result string is separated by a space, 
+ * unless the optional 'separator' property is defined.
  * 
  * A very rudimentary facility for transformation of data is supported, e.g.
  * 
@@ -116,10 +118,15 @@ import org.dspace.curate.Suspendable;
  *
  * Transforms may also be used in datamaps, e.g.
  * 
- *  //publisher/name=>shorten:dc.publisher,//romeocolour
+ * //publisher/name=>shorten:dc.publisher,//romeocolour
  *  
- *  which would apply the 'shorten' transform to the service response value(s)
- *  prior to metadata field assignment.
+ * which would apply the 'shorten' transform to the service response value(s)
+ * prior to metadata field assignment.
+ *
+ * An optional property 'headers' may be defined to stipulate any HTTP headers
+ * required in the service call. The property syntax is double-pipe separated headers:
+ * 
+ * Accept: text/xml||Cache-Control: no-cache
  * 
  * @author richardrodgers
  */
@@ -145,8 +152,12 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
     private DocumentBuilder docBuilder = null;
     // language for metadata fields assigned
     private String lang = null;
+    // field separator in result string
+    private String fieldSeparator = null;
     // optional XML namespace map
     private Map<String, String> nsMap = null;
+    // optional HTTP headers
+    private Map<String, String> headers = new HashMap<String, String>();
     
     /**
      * Initializes task
@@ -157,6 +168,8 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
     public void init(Curator curator, String taskId) throws IOException {
     	super.init(curator, taskId);
     	lang = ConfigurationManager.getProperty("default.language");
+        String fldSep = taskProperty("separator");
+        fieldSeparator = (fldSep != null) ? fldSep : " ";
     	urlTemplate = taskProperty("template");
     	templateParam = urlTemplate.substring(urlTemplate.indexOf("{") + 1,
     			                              urlTemplate.indexOf("}"));
@@ -179,6 +192,13 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
         	String label = (slIdx > 0) ? src.substring(slIdx + 1) : src;
     		dataList.add(new DataInfo(src, label, mapping, field));
     	}
+        String hdrs = taskProperty("headers");
+        if (hdrs != null) {
+            for (String header : hdrs.split("\\|\\|")) {
+                int split = header.indexOf(":");
+                headers.put(header.substring(0, split).trim(), header.substring(split + 1).trim());
+            }
+        }
     	// initialize response document parser
     	DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
     	factory.setNamespaceAware(true);
@@ -211,6 +231,8 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
             	DCValue[] titleDc = item.getMetadata("dc", "title", null, Item.ANY);
             	String title = (titleDc.length > 0) ? titleDc[0].value : "untitled - dbId: " + item.getID();
             	itemId = "Workflow item: " + title;
+            } else {
+                itemId = "handle:" + itemId;
             }
             resultSb.append(itemId);
             // Only proceed if item has a value for service template parameter
@@ -235,6 +257,9 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
     	String callUrl = urlTemplate.replaceAll("\\{" + templateParam + "\\}", value);
     	HttpClient client = new DefaultHttpClient();
     	HttpGet req = new HttpGet(callUrl);
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            req.addHeader(entry.getKey(), entry.getValue());
+        }
     	HttpResponse resp = client.execute(req);
     	int status = Curator.CURATE_ERROR;
     	int statusCode = resp.getStatusLine().getStatusCode();
@@ -308,7 +333,7 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
        					update = true;
        				}
        				// add to result string in any case
-       				resultSb.append(info.label).append(": ").append(tvalue).append(" ");
+       				resultSb.append(info.label).append(":").append(tvalue).append(fieldSeparator);
        			}
        		}
        		// update Item if it has changed
