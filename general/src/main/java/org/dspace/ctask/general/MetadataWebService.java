@@ -155,7 +155,7 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
     // field separator in result string
     private String fieldSeparator = null;
     // optional XML namespace map
-    private Map<String, String> nsMap = null;
+    private Map<String, String> nsMap = new HashMap<String, String>();
     // optional HTTP headers
     private Map<String, String> headers = new HashMap<String, String>();
     
@@ -435,38 +435,34 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
     private void checkNamespaces(Document document) throws IOException {
     	// skip if already done
     	if (dataList.get(0).expr != null) {
-    		return;
+    	    return;
     	}
     	try {
-    		XPath xpath = XPathFactory.newInstance().newXPath();
-    		String prefix = null;
-    		// see if there is a default namespace declaration
-    		if (document.getDocumentElement().hasAttribute("xmlns")) {
-    			NamedNodeMap attrs = document.getDocumentElement().getAttributes();
-    			for (int i = 0; i < attrs.getLength(); i++) {
-    				Node n = attrs.item(i);
-    				// remember if a namespace
-    				String name = n.getNodeName();
-    				if (name.startsWith("xmlns")) {
-    					if (nsMap == null) {
-    						nsMap = new HashMap<String, String>();
-    					}
-    					if (! "xmlns".equals(name)) {
-    						// it is a declared (non-default) namespace - capture prefix
-    						nsMap.put(name.substring(name.indexOf(":") + 1), n.getNodeValue());
-    					} else {
-    						// it is the default name space - mint a unique prefix
-    						prefix = "pre";
-    						nsMap.put(prefix, n.getNodeValue());
-    					}
-    				}
-    			}
-    			xpath.setNamespaceContext(this);
-    		}
+    	    XPath xpath = XPathFactory.newInstance().newXPath();
+    	    String prefix = null;
+            NamedNodeMap attrs = document.getDocumentElement().getAttributes();
+    		for (int i = 0; i < attrs.getLength(); i++) {
+    		    Node n = attrs.item(i);
+                String name = n.getNodeName();
+                // remember if a namespace
+                if (name.startsWith("xmlns")) {
+                    if (! "xmlns".equals(name)) {
+                        // it is a declared (non-default) namespace - capture prefix
+                        nsMap.put(name.substring(name.indexOf(":") + 1), n.getNodeValue());
+                    } else {
+                        // it is the default name space - mint a unique prefix
+                        prefix = "pre";
+                        nsMap.put(prefix, n.getNodeValue());
+                    }
+                }
+            }
+            if (nsMap.size() > 0) {
+    		    xpath.setNamespaceContext(this);
+            }
     		// now compile the XPath expressions
     		for (DataInfo info : dataList) {
-				info.expr = xpath.compile(mangleExpr(info.xpsrc, prefix));
-			}
+			    info.expr = xpath.compile(mangleExpr(info.xpsrc, prefix));
+		    }
     	} catch (XPathExpressionException xpeE) {
     		log.error("caught exception: " + xpeE);
         	// no point in continuing
