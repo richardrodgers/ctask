@@ -232,7 +232,7 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
             	String title = (titleDc.length > 0) ? titleDc[0].value : "untitled - dbId: " + item.getID();
             	itemId = "Workflow item: " + title;
             } else {
-                itemId = "handle:" + itemId;
+                itemId = "handle: " + itemId;
             }
             resultSb.append(itemId);
             // Only proceed if item has a value for service template parameter
@@ -333,7 +333,7 @@ public class MetadataWebService extends AbstractCurationTask implements Namespac
        					update = true;
        				}
        				// add to result string in any case
-       				resultSb.append(info.label).append(":").append(tvalue).append(fieldSeparator);
+       				resultSb.append(fieldSeparator).append(info.label).append(": ").append(tvalue);
        			}
        		}
        		// update Item if it has changed
