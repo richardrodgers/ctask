@@ -12,7 +12,13 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
+import java.awt.image.BufferedImageOp;
+import java.awt.image.ConvolveOp;
+import java.awt.image.Kernel;
+import java.awt.RenderingHints;
 import java.awt.Rectangle;
+import java.awt.RenderingHints;
+import java.awt.Transparency;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -34,8 +40,8 @@ import org.dspace.curate.Mutative;
  * designated bundles. Rough equivalent to the merger of the thumbnail
  * (JPEG) and branded image functionality in MediaFilter. The task
  * succeeds if all eligible derivatives are created, otherwise fails.
- * - Credits to authors of JPEGFilter and BrandedPreview code, from
- * which most of this was taken.
+ * - Credits to authors of JPEGFilter and BrandedPreview code and
+ * improvements by Jason Sherman, from which most of this was taken.
  * 
  * @author richardrodgers
  */
@@ -45,6 +51,9 @@ public class ScaleImage extends MediaFilter
 	// derivative image dimensions
 	private float maxWidth = 0;
 	private float maxHeight = 0;
+  // image creation parameters
+  private boolean blurring = false;
+  private boolean hqScaling = false;
 	// optional branding parameters
 	private int brandHeight = 0;
 	private String brandText = null;
@@ -54,6 +63,10 @@ public class ScaleImage extends MediaFilter
 	// supported input formats
 	private List<String> mimeTypes = Arrays.asList(ImageIO.getReaderMIMETypes());
 	private List<String> suffixes = Arrays.asList(ImageIO.getReaderFileSuffixes());
+  // blur matrix
+  private static float[] matrix = {0.111f, 0.111f, 0.111f, 0.111f, 0.111f, 0.111f,
+                                   0.111f, 0.111f, 0.111f};
+  private static BufferedImageOp blurOp = new ConvolveOp(new Kernel(3, 3, matrix));
     
     @Override 
     public void init(Curator curator, String taskId) throws IOException {
@@ -61,6 +74,8 @@ public class ScaleImage extends MediaFilter
         
         maxWidth = Float.parseFloat(taskProperty("image.maxwidth"));
         maxHeight = Float.parseFloat(taskProperty("image.maxheight"));
+        blurring = taskBooleanProperty("image.blurring", false);
+        hqScaling = taskBooleanProperty("image.hqscaling", false);
         // optional branding properties - any or all may be null
         brandHeight = taskIntProperty("brand.height", 0);
         brandText = taskProperty("brand.text");
@@ -118,6 +133,32 @@ public class ScaleImage extends MediaFilter
         // create an image buffer for the dervative with the new xsize, ysize
         BufferedImage derivative = new BufferedImage((int) xsize, (int) ysize + brandHeight,
                                                     BufferedImage.TYPE_INT_RGB);
+        int type = (buf.getTransparency() == Transparency.OPAQUE) ? BufferedImage.TYPE_INT_RGB : BufferedImage.TYPE_INT_ARGB_PRE;                                 
+        if (blurring) {
+           BufferedImage normal = new BufferedImage(buf.getWidth(), buf.getHeight(), type);
+           Graphics2D g2d = normal.createGraphics();
+           g2d.drawImage(buf, 0, 0, buf.getWidth(), buf.getHeight(), Color.WHITE, null);
+           g2d.dispose();
+           buf = blurOp.filter(normal, null);
+        }
+        
+        if (hqScaling) {
+          // successive HQ downscale approximations
+          int targWidth = (int)xsize;
+          int targHeight = (int)ysize;
+          BufferedImage approx = buf;
+          while (approx.getWidth() > targWidth) {
+            int w = Math.max(approx.getWidth() / 2, targWidth);
+            int h = Math.max(approx.getHeight() / 2, targHeight);
+            BufferedImage tmp = new BufferedImage(w, h, type);
+            Graphics2D g2d = tmp.createGraphics();
+            g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            g2d.drawImage(approx, 0, 0, w, h, Color.WHITE, null);
+            g2d.dispose();
+            approx = tmp;   
+          }
+          buf = approx;
+        }
 
         // now render the image into the derivative buffer
         Graphics2D g2d = derivative.createGraphics();
