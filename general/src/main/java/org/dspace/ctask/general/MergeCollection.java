@@ -72,7 +72,7 @@ public class MergeCollection extends AbstractCurationTask {
             } catch (SQLException sqlE) {
                 throw new IOException("SQLException: " + sqlE.getMessage());
             }
-            setResult(numMerged + "items have been merged from: " + fromColl.getHandle() + " into : " + toColl.getHandle());
+            setResult(numMerged + " items have been merged from: " + fromColl.getHandle() + " into : " + toColl.getHandle());
             return CURATE_SUCCESS;
         } else {
             setResult("Not a collection, skipped");
